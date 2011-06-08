@@ -10,8 +10,6 @@ config __at 0x2007 __CONFIG = _CP_OFF &
 	_XT_OSC &
 	_LVP_OFF;
 
-char check = 0;
-
 unsigned char int_c = 0;
 unsigned char int_b = 0;
 unsigned char last_c = 0;
@@ -19,20 +17,11 @@ unsigned char last_b = 0;
 
 unsigned int portb = 0;
 
-unsigned char last_command = 0;
 unsigned char state = 0;
 
 #define BUFFER_LEN 2
 unsigned char buffer[BUFFER_LEN];
 unsigned char buffer_size = 0;
-
-void buffer_push(unsigned char value)
-{
-	if (buffer_size >= BUFFER_LEN)
-		return;
-	buffer[buffer_size] = value;
-	buffer_size++;
-}
 
 unsigned char buffer_pop(void)
 {
