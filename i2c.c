@@ -14,8 +14,8 @@ config __at 0x2007 __CONFIG = _CP_OFF &
 
 unsigned char int_c = 0;
 unsigned char int_b = 0;
-unsigned char last_c = 0;
-unsigned char last_b = 0;
+volatile unsigned char last_c = 0;
+volatile unsigned char last_b = 0;
 
 unsigned int portb = 0;
 
@@ -55,7 +55,20 @@ void analogue_read(unsigned char port)
 	buffer[1] = ADRESL;
 	buffer_size = 2;
 }
-	
+
+void update_interrupts(void)
+{
+	unsigned char old_gie = GIE;
+	GIE = 0;
+	if (((last_c ^ PORTC) & int_c) || ((last_b ^ PORTB) & int_b)) {
+		portb = portb | 0x80;
+	} else {
+		portb = portb & 0x7F;
+	}
+	PORTB = portb;
+	GIE = old_gie;
+}
+
 void handle_command(unsigned char command)
 {
 	switch(state) {
@@ -69,16 +82,16 @@ void handle_command(unsigned char command)
 					analogue_read(command);
 					break;
 				case CMD_READ_PORTC:
-					buffer[0] = PORTC;
+					last_c = PORTC;
+					buffer[0] = last_c;
 					buffer_size = 1;
-					portb = portb & 0x7F;
-					PORTB = portb;
+					update_interrupts();
 					break;
 				case CMD_READ_PORTB:
-					buffer[0] = PORTB;
+					last_b = PORTB;
+					buffer[0] = last_b;
 					buffer_size = 1;
-					portb = portb & 0x7F;
-					PORTB = portb;
+					update_interrupts();
 					break;
 				case CMD_SET_TRISC:
 				case CMD_SET_TRISB:
@@ -113,47 +126,48 @@ void handle_command(unsigned char command)
 	}
 }
 
-volatile unsigned char address = 0;
-
 static void isr(void) __interrupt 0 { 
-	unsigned char buf;
 	if (SSPIF) {
 
-		buf = SSPBUF;
-		address = SSPBUF;
-
-		if (I2C_READ) {
-			if (buffer_size)
-				SSPBUF = buffer_pop();
-			if (SSPOV) {
-				TRISB = 0x7E;
-				PORTB = 1;
-			}
+		if (!I2C_DATA && ! I2C_READ && BF) {
+			// State 1
+			__asm
+				BANKSEL _SSPBUF
+				MOVF    _SSPBUF, W
+			__endasm;
+			BF = 0;
+			state = 0;
+		} else if (I2C_DATA && !I2C_READ && BF) {
+			// State 2
+			handle_command(SSPBUF);
+		} else if (!I2C_DATA && I2C_READ) {
+			// State 3
+			SSPBUF = buffer_pop();
+		} else if (I2C_DATA && I2C_READ && !BF) {
+			// State 4
+			SSPBUF = buffer_pop();
+		} else if (I2C_DATA && !BF) {
+			// State 5
+			state = 0;
+			buffer_size = 0;
 		} else {
-			// process command
-			if (I2C_DATA) {
-				handle_command(buf);
-				if (SSPOV) {
-					TRISB = 0x7D;
-					PORTB = 2;
-				}
-			}
-			else {
-				__asm
-					MOVF	_SSPBUF, W
-				__endasm;
-				address = buf;
-				state = 0;
-				if (SSPOV) {
-					TRISB = 0x7B;
-					PORTB = 4;
-				}
-			}
-		BF = 0;
+			// fail.
+			// Do a read just in case.
+			__asm
+				BANKSEL _SSPBUF
+				MOVF    _SSPBUF, W
+			__endasm;
+			
+			state = 0;
+			buffer_size = 0;
 		}
-
-
-
+		
+		if (SSPOV)
+			SSPOV = 0;
+		
+		if (WCOL)
+			WCOL = 0;
+		
 		SSPIF = 0;
 		CKP = 1;
 	}
@@ -191,18 +205,7 @@ void main(void) {
 	GIE = 1;                /* global interrupt enable */
 
 	while (1) {
-		if (SSPOV) {
-			TRISB = 0;
-			PORTB = SSPBUF;
-			while (1) {}
-		}
-		// if (((last_c ^ PORTC) & int_c) || ((last_b ^ PORTB) & int_b)) {
-		// 	portb = portb | 0x80;
-		// 	PORTB = portb;
-		// 
-		// 	last_c = PORTC;
-		// 	last_b = PORTB;
-		// }
+		update_interrupts();
 	}
 	
 }
