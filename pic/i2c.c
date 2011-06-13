@@ -3,6 +3,8 @@
 
 #include "commands.h"
 
+#define ADDRESS 2
+
 /* Setup chip configuration */
 typedef unsigned int config;
 config __at 0x2007 __CONFIG = _CP_OFF & 
@@ -182,7 +184,7 @@ void main(void) {
 	PORTB = portb;
 	TRISC = 0xFF;
 	
-	SSPADD = 4;
+	SSPADD = ADDRESS << 1;
 	WCOL = 0;
 	SSPOV = 0;
 	BF = 0;
